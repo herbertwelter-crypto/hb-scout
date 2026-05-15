@@ -1,0 +1,1801 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HB Scout</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs" type="module"></script>
+  <script type="module">
+    import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+    window.pdfjsLib = pdfjsLib;
+  </script>
+  <style>
+    :root{
+      --bg:#0f172a;
+      --surface:#111827;
+      --surface-2:#1f2937;
+      --surface-3:#273449;
+      --border:#334155;
+      --text:#e5edf7;
+      --muted:#94a3b8;
+      --gold:#fbbf24;
+      --green:#22c55e;
+      --red:#ef4444;
+      --blue:#60a5fa;
+      --shadow:0 12px 32px rgba(0,0,0,.24);
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    body{font-family:Inter,Arial,sans-serif;background:linear-gradient(180deg,#0b1220 0%,#0f172a 100%);color:var(--text);font-size:14px}
+    button,input,select{font:inherit}
+    button{cursor:pointer}
+    .app{height:100vh;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+
+    /* TOPBAR — kompakter */
+    .topbar{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.96);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.08);padding:8px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .brand{display:flex;align-items:center;gap:10px}
+    .brand-mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#111827;font-weight:900;font-size:13px;box-shadow:var(--shadow)}
+    .brand-title{font-size:1rem;font-weight:800;line-height:1.1}
+    .brand-sub{font-size:.72rem;color:var(--muted)}
+    .scoreboard{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .team-score{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 12px;display:flex;align-items:center;gap:8px}
+    .team-name-label{font-size:.78rem;color:var(--muted)}
+    .team-score strong{font-size:1.1rem;min-width:1.6em;text-align:center}
+
+    /* Mode toggle in header */
+    .mode-toggle{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
+    .mode-btn{padding:6px 12px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-weight:700;font-size:.82rem;transition:.15s}
+    .mode-btn.active{background:var(--surface-3);color:var(--gold)}
+
+    /* MAIN — view switching */
+    .main{height:100%;overflow:hidden;padding:0}
+    .view{display:none;height:100%;overflow:hidden}
+    .view.active{display:grid}
+
+    /* ── LIVE VIEW: 3-column grid optimized for iPad landscape ── */
+    .view-live{
+      grid-template-columns: minmax(260px, 320px) 1fr minmax(260px, 320px);
+      gap: 10px;
+      padding: 10px;
+    }
+
+    /* ── SETUP VIEW: team database / setup before game ── */
+    .view-setup{
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    /* PANELS */
+    .panel{background:rgba(17,24,39,.96);border:1px solid rgba(255,255,255,.08);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;min-width:0;display:flex;flex-direction:column}
+    .panel-body{padding:10px;overflow:auto;flex:1;min-height:0}
+    .section-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:8px;font-weight:700}
+
+    /* GRID HELPERS */
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+
+    /* INPUTS */
+    .input,.select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);outline:none;font-size:.9rem}
+    .input:focus,.select:focus{border-color:var(--blue)}
+
+    /* BUTTONS */
+    .btn{border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:.88rem;transition:.15s ease}
+    .btn:hover{transform:translateY(-1px)}
+    .btn-primary{background:var(--gold);color:#111827}
+    .btn-secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
+    .btn-danger{background:rgba(239,68,68,.14);color:#fecaca;border:1px solid rgba(239,68,68,.35)}
+    .btn-sm{padding:5px 10px;font-size:.78rem}
+
+    /* TABS — Ballbesitz */
+    .tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .tab-btn{padding:9px 8px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-weight:700;font-size:.88rem}
+    .tab-btn.active{background:rgba(96,165,250,.14);border-color:var(--blue);color:#dbeafe}
+
+    /* STATUS BAR — kompakter */
+    .status-bar{display:flex;gap:6px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:7px 10px}
+    .status-chip{display:flex;flex-direction:column;gap:1px;padding:0 8px;min-width:0;flex:1}
+    .status-chip + .status-chip{border-left:1px solid var(--border);padding-left:10px}
+    .status-label{font-size:.6rem;text-transform:uppercase;color:var(--muted);letter-spacing:.06em}
+    .status-value{font-weight:700;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    /* DB / TEAM */
+    .db-card,.team-block{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px}
+    .db-card + .db-card,.team-block + .team-block{margin-top:10px}
+    .db-head,.team-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+
+    /* PLAYER LISTS */
+    .db-list,.player-list{display:grid;gap:5px;padding-right:2px}
+    .db-item,.player-item{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--surface-3);font-size:.88rem}
+    .db-main,.player-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .db-name,.player-name{font-weight:700;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .db-meta,.player-tags{display:flex;gap:4px;flex-wrap:wrap}
+
+    .chip{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background:#172131;border:1px solid var(--border);font-size:.66rem;font-weight:700;color:var(--muted)}
+    .chip.shooter{color:#bbf7d0;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08)}
+    .chip.gk{color:#bfdbfe;border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.08)}
+
+    .item-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+    .mini-btn{border:none;border-radius:7px;padding:5px 8px;font-size:.74rem;font-weight:700}
+    .mini-btn.load{background:rgba(251,191,36,.12);color:#fde68a;border:1px solid rgba(251,191,36,.35)}
+    .mini-btn.shooter{background:rgba(34,197,94,.12);color:#bbf7d0;border:1px solid rgba(34,197,94,.35)}
+    .mini-btn.gk{background:rgba(96,165,250,.12);color:#dbeafe;border:1px solid rgba(96,165,250,.35)}
+    .mini-btn.delete{background:rgba(239,68,68,.12);color:#fecaca;border:1px solid rgba(239,68,68,.35)}
+    .mini-btn:disabled{opacity:.38;cursor:not-allowed}
+
+    /* OPTION BUTTONS — Wurfart, Position */
+    .option-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+    .option-grid.cols-2{grid-template-columns:1fr 1fr}
+    .option-grid.cols-4{grid-template-columns:repeat(4,1fr)}
+    .option-grid.cols-6{grid-template-columns:repeat(6,1fr)}
+    .option-btn{padding:8px 6px;border-radius:8px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-weight:700;font-size:.84rem}
+    .option-btn.active{border-color:var(--gold);color:var(--gold);background:rgba(251,191,36,.14)}
+
+    /* GOAL AREA */
+    .goal-area{display:grid;gap:5px;justify-items:center}
+    .goal-row{display:flex;align-items:stretch;gap:5px;justify-content:center;width:100%}
+    .goal-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:4px;flex:1;aspect-ratio: 3 / 2;max-height:160px}
+    .goal-btn{border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#223049,#1a2332);color:var(--text);font-size:.95rem;font-weight:800;padding:0}
+    .goal-btn:hover{border-color:var(--blue);background:#28405f}
+    .side-shot-btn,.save-btn{border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-weight:700;padding:6px 8px;font-size:.78rem}
+    .side-shot-btn{display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .side-shot-btn.miss{color:#fecaca;border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08)}
+    .save-btn{width:100%;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35);color:#bbf7d0;font-size:.92rem;padding:10px;min-height:44px}
+
+    /* NOTICE */
+    .notice{display:none;margin-top:8px;padding:9px 10px;border-radius:8px;font-size:.82rem;border:1px solid transparent}
+    .notice.show{display:block}
+    .notice.error{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35);color:#fecaca}
+    .notice.ok{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35);color:#bbf7d0}
+
+    .toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+
+    /* STATS */
+    .stats-grid{display:grid;gap:6px}
+    .team-split{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .stat-card{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:7px 9px}
+    .stat-card .muted{font-size:.7rem}
+    .stat-big{font-size:1.05rem;font-weight:900;line-height:1.1}
+
+    /* LOG */
+    .log-list{display:grid;gap:5px;padding-right:2px}
+    .log-item{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:7px 9px;display:grid;gap:4px;font-size:.82rem}
+    .log-top{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+
+    .pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:.7rem;font-weight:800;background:#172131;border:1px solid var(--border)}
+    .pill.tor{color:#bbf7d0;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08)}
+    .pill.vorbei{color:#fecaca;border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08)}
+    .pill.gehalten{color:#bfdbfe;border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.08)}
+
+    .muted{color:var(--muted);font-size:.78rem}
+    .empty{color:var(--muted);font-size:.85rem;padding:6px 0}
+    table{width:100%;border-collapse:collapse;font-size:.82rem}
+    th,td{padding:5px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+    th{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
+
+    /* MODAL */
+    #editModal{display:none !important}
+    #editModal[style*="display: flex"]{display:flex !important}
+
+    /* Stack columns */
+    .left-stack,.center-stack,.right-stack{display:grid;gap:8px;height:100%;overflow:hidden;min-height:0}
+    .left-stack{grid-template-rows:1fr 1fr}
+    .center-stack{grid-template-rows:auto auto auto auto auto}
+    .right-stack{grid-template-rows:auto auto 1fr}
+    .left-stack > .panel,.center-stack > .panel,.right-stack > .panel{min-height:0}
+
+    /* Team field/bench compact in live mode */
+    .team-block .section-title{font-size:.62rem;margin:6px 0 4px}
+    .team-block:first-child .section-title:first-child{margin-top:0}
+
+    /* Smaller iPad / iPad Mini portrait */
+    @media (max-width:1100px){
+      html,body{overflow:auto}
+      .app{height:auto;min-height:100vh}
+      .view{height:auto}
+      .view-live{
+        grid-template-columns: 1fr 1fr;
+      }
+      .left-stack,.center-stack,.right-stack{height:auto;overflow:visible}
+      .right-stack{grid-column:1 / -1}
+    }
+    @media (max-width:760px){
+      .view-live{grid-template-columns:1fr}
+      .right-stack{grid-column:1}
+      .view-setup{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">HB</div>
+        <div>
+          <div class="brand-title">HB Scout</div>
+          <div class="brand-sub">Live Wurfanalyse</div>
+        </div>
+      </div>
+      <div class="mode-toggle">
+        <button type="button" class="mode-btn" id="modeSetupBtn">📋 Setup</button>
+        <button type="button" class="mode-btn active" id="modeLiveBtn">⚡ Live</button>
+      </div>
+      <div class="scoreboard">
+        <div class="team-score"><span class="team-name-label" id="scoreTeamAName">Team A</span><strong id="scoreA">0</strong></div>
+        <strong>:</strong>
+        <div class="team-score"><strong id="scoreB">0</strong><span class="team-name-label" id="scoreTeamBName">Team B</span></div>
+        <button type="button" class="btn btn-primary btn-sm" id="endGameBtn">🏁 Spiel beenden</button>
+        <button type="button" class="btn btn-danger btn-sm" id="newGameBtn">Neues Spiel</button>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <!-- ════ SETUP VIEW (Datenbank + Teams laden) ════ -->
+      <section class="view view-setup" id="viewSetup">
+        <div class="panel">
+          <div class="panel-body">
+            <div class="section-title">Team-Datenbank · Neues Team anlegen</div>
+            
+            <!-- TEMPLATE SECTION -->
+            <div class="db-card" style="background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3)">
+              <div class="db-head"><strong>⭐ Standard-Vorlage</strong><span class="chip">2 TW + 12 Spieler</span></div>
+              <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">Fertige Mannschaftsvorlage zum schnellen Kopieren</div>
+              <button type="button" class="btn btn-primary" id="copyTemplateBtn" style="width:100%">📋 Als neues Team kopieren</button>
+            </div>
+
+            <!-- OCR IMPORT SECTION -->
+            <div class="db-card" style="background:rgba(168,85,247,.08);border-color:rgba(168,85,247,.3)">
+              <div class="db-head"><strong>📷 Mannschaftsliste scannen</strong><span class="chip">PDF / Foto</span></div>
+              <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">Foto oder PDF hochladen → Spielerliste automatisch erkennen</div>
+              <input type="file" id="ocrFileInput" accept="image/*,.pdf" style="display:none" />
+              <button type="button" class="btn btn-primary" id="ocrUploadBtn" style="width:100%;background:#a855f7;color:white">📷 Datei auswählen</button>
+              <div id="ocrStatus" style="display:none;margin-top:8px;padding:8px;background:var(--surface-2);border-radius:8px;font-size:.82rem"></div>
+              <div id="ocrResult" style="display:none;margin-top:8px">
+                <div style="font-size:.85rem;color:var(--muted);margin-bottom:6px">Erkannte Spieler (bearbeiten möglich):</div>
+                <input id="ocrTeamName" class="input" placeholder="Teamname eingeben" style="margin-bottom:8px"/>
+                <textarea id="ocrText" class="input" style="width:100%;min-height:200px;font-family:monospace;font-size:.82rem;resize:vertical" placeholder="Format: Nummer Name (eine Zeile pro Spieler)&#10;z.B.&#10;1 Max Müller&#10;7 Lisa Schmidt"></textarea>
+                <div style="font-size:.7rem;color:var(--muted);margin-top:4px;margin-bottom:8px">💡 Format pro Zeile: <strong>Nummer Name</strong> · TW markieren mit *Sternchen* z.B. <em>1 *Max Müller*</em></div>
+                <button type="button" class="btn btn-primary" id="ocrSaveBtn" style="width:100%">✓ Als Team speichern</button>
+              </div>
+            </div>
+
+            <!-- MANUAL ENTRY SECTION -->
+            <div class="db-card">
+              <div class="db-head"><strong>Neues Team</strong><span class="chip">manuell anlegen</span></div>
+              <div class="grid-2" style="margin-bottom:8px;">
+                <input id="dbTeamName" class="input" placeholder="Teamname" />
+                <input id="dbPlayerName" class="input" placeholder="Spielername" />
+              </div>
+              <div class="grid-3" style="margin-bottom:8px;">
+                <input id="dbPlayerNumber" class="input" placeholder="Nr." />
+                <select id="dbPlayerRole" class="select">
+                  <option value="field">Feldspieler</option>
+                  <option value="goalkeeper">Torwart</option>
+                </select>
+                <button type="button" class="btn btn-secondary" id="dbAddPlayerBtn">+ Spieler</button>
+              </div>
+              <div id="draftPlayers" class="player-list" style="margin-bottom:8px;max-height:240px;overflow:auto"><div class="empty">Noch keine Spieler im neuen Team.</div></div>
+              <button type="button" class="btn btn-primary" id="saveTeamBtn" style="width:100%">Team speichern</button>
+              <div id="notice" class="notice"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-body">
+            <div class="toolbar">
+              <div class="section-title" style="margin:0">Gespeicherte Teams</div>
+              <span class="chip" id="dbCount">0 Teams</span>
+            </div>
+            <div class="db-card" style="margin-bottom:10px;">
+              <div class="section-title" style="margin-bottom:6px">Schnell laden</div>
+              <div class="grid-2" style="margin-bottom:6px;">
+                <select id="loadTeamASelect" class="select"></select>
+                <button type="button" class="btn btn-secondary" id="loadTeamABtn">→ Als Team A</button>
+              </div>
+              <div class="grid-2">
+                <select id="loadTeamBSelect" class="select"></select>
+                <button type="button" class="btn btn-secondary" id="loadTeamBBtn">→ Als Team B</button>
+              </div>
+            </div>
+            <div id="teamDatabaseList" class="db-list" style="max-height:none"><div class="empty">Noch keine Teams gespeichert.</div></div>
+
+            <!-- PLAYER STATISTICS DATABASE -->
+            <div class="db-card" style="margin-top:12px;background:rgba(96,165,250,.08);border-color:rgba(96,165,250,.3)">
+              <div class="db-head">
+                <strong>📊 Spieler-Statistik-Datenbank</strong>
+                <span class="chip" id="playerDbCount">0 Einträge</span>
+              </div>
+              <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">Alle gespeicherten Spielerdaten aus beendeten Spielen</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+                <button type="button" class="btn btn-secondary btn-sm" id="exportPlayerStatsBtn">📥 CSV Export</button>
+                <button type="button" class="btn btn-danger btn-sm" id="clearPlayerStatsBtn">🗑️ Alle löschen</button>
+              </div>
+              <div id="playerStatsList" style="max-height:300px;overflow:auto;font-size:.82rem"><div class="empty">Noch keine Spielerdaten gespeichert.</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════ LIVE VIEW (alles auf einen Blick) ════ -->
+      <section class="view view-live active" id="viewLive">
+
+        <!-- LINKE SPALTE: Team A & Team B Kader -->
+        <div class="left-stack">
+          <div class="panel">
+            <div class="panel-body">
+              <div class="team-head" style="margin-bottom:6px"><strong id="teamATitle">Team A</strong><span class="chip">Schütze</span></div>
+              <div class="section-title" style="margin:0 0 4px">Auf dem Feld</div>
+              <div class="player-list" id="playerListAField"><div class="empty">Kein Team geladen.</div></div>
+              <div class="section-title" style="margin:8px 0 4px">Bank</div>
+              <div class="player-list" id="playerListABench"><div class="empty">—</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-body">
+              <div class="team-head" style="margin-bottom:6px"><strong id="teamBTitle">Team B</strong><span class="chip">Schütze</span></div>
+              <div class="section-title" style="margin:0 0 4px">Auf dem Feld</div>
+              <div class="player-list" id="playerListBField"><div class="empty">Kein Team geladen.</div></div>
+              <div class="section-title" style="margin:8px 0 4px">Bank</div>
+              <div class="player-list" id="playerListBBench"><div class="empty">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MITTLERE SPALTE: Eingabe-Workflow -->
+        <div class="center-stack">
+
+          <!-- Status: aktuelle Auswahl kompakt -->
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="status-bar">
+                <div class="status-chip">
+                  <div class="status-label">Schütze</div>
+                  <div class="status-value" id="currentShooter">— wählen —</div>
+                </div>
+                <div class="status-chip">
+                  <div class="status-label">Torwart</div>
+                  <div class="status-value" id="currentGoalkeeper">— auto —</div>
+                </div>
+                <div class="status-chip">
+                  <div class="status-label">Angriffsart</div>
+                  <div class="status-value" id="currentShotType">—</div>
+                </div>
+                <div class="status-chip">
+                  <div class="status-label">Position</div>
+                  <div class="status-value" id="currentPosition">—</div>
+                </div>
+                <div class="status-chip" style="display:none">
+                  <div class="status-label">Team</div>
+                  <div class="status-value" id="currentAttackTeam">Team A</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Angriffsart -->
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="section-title" style="margin-bottom:6px">Angriffsart</div>
+              <div class="option-grid cols-4">
+                <button type="button" class="option-btn" data-shot-type="Positionsspiel">Positionsspiel</button>
+                <button type="button" class="option-btn" data-shot-type="7 Meter">7 Meter</button>
+                <button type="button" class="option-btn" data-shot-type="Konter">Konter</button>
+                <button type="button" class="option-btn" data-shot-type="Freiwurf">Freiwurf</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wurfposition -->
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="section-title" style="margin-bottom:6px">Wurfposition</div>
+              <div class="option-grid cols-6">
+                <button type="button" class="option-btn" data-position="LA">LA</button>
+                <button type="button" class="option-btn" data-position="RL">RL</button>
+                <button type="button" class="option-btn" data-position="RM">RM</button>
+                <button type="button" class="option-btn" data-position="RR">RR</button>
+                <button type="button" class="option-btn" data-position="RA">RA</button>
+                <button type="button" class="option-btn" data-position="KM">KM</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wohin (Tor) -->
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="section-title" style="margin-bottom:6px">Wohin?</div>
+              <div class="goal-area">
+                <button type="button" class="side-shot-btn miss" data-result="VORBEI" data-zone="Oben vorbei" style="width:100%;min-height:30px">↑ Oben vorbei</button>
+                <div class="goal-row">
+                  <button type="button" class="side-shot-btn miss" data-result="VORBEI" data-zone="Links vorbei" style="width:60px;min-height:auto">←<br>Links<br>vorbei</button>
+                  <div class="goal-grid">
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Oben Links">OL</button>
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Oben Mitte">OM</button>
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Oben Rechts">OR</button>
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Unten Links">UL</button>
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Unten Mitte">UM</button>
+                    <button type="button" class="goal-btn" data-result="TOR" data-zone="Unten Rechts">UR</button>
+                  </div>
+                  <button type="button" class="side-shot-btn miss" data-result="VORBEI" data-zone="Rechts vorbei" style="width:60px;min-height:auto">→<br>Rechts<br>vorbei</button>
+                </div>
+                <button type="button" class="save-btn" data-result="GEHALTEN" data-zone="TW Parade">🧤 Gehalten</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- RECHTE SPALTE: Stats + Log -->
+        <div class="right-stack">
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="toolbar"><div class="section-title" style="margin:0">Stats</div><button type="button" class="btn btn-secondary btn-sm" id="clearLogBtn">Reset</button></div>
+              <div class="stats-grid">
+                <div class="team-split">
+                  <div class="stat-card"><div class="muted">Tore A</div><div class="stat-big" id="statGoalsA">0</div></div>
+                  <div class="stat-card"><div class="muted">Tore B</div><div class="stat-big" id="statGoalsB">0</div></div>
+                </div>
+                <div class="team-split">
+                  <div class="stat-card"><div class="muted">Würfe A</div><div class="stat-big" id="statShotsA">0</div></div>
+                  <div class="stat-card"><div class="muted">Würfe B</div><div class="stat-big" id="statShotsB">0</div></div>
+                </div>
+                <div class="team-split">
+                  <div class="stat-card"><div class="muted">Quote A</div><div class="stat-big" id="statQuoteA">0%</div></div>
+                  <div class="stat-card"><div class="muted">Quote B</div><div class="stat-big" id="statQuoteB">0%</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-body" style="padding:8px;max-height:200px">
+              <div class="section-title" style="margin-bottom:6px">Spielerstatistik</div>
+              <div style="overflow:auto;max-height:160px">
+                <table>
+                  <thead><tr><th>Spieler</th><th>T</th><th>W</th><th>%</th></tr></thead>
+                  <tbody id="statsTableBody"><tr><td colspan="4" class="empty">—</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-body" style="padding:8px">
+              <div class="section-title" style="margin-bottom:6px">Letzte Aktionen</div>
+              <div id="logList" class="log-list"><div class="empty">Noch keine Aktionen.</div></div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- EDIT PLAYER MODAL -->
+    <div id="editModal" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;display:none;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:360px;width:90%;box-shadow:var(--shadow)">
+        <div style="font-size:1.1rem;font-weight:700;margin-bottom:16px">Spieler bearbeiten</div>
+        <div style="display:grid;gap:12px;margin-bottom:16px">
+          <div>
+            <label style="display:block;font-size:.85rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Name</label>
+            <input id="editModalName" class="input" type="text" placeholder="Spielername" />
+          </div>
+          <div>
+            <label style="display:block;font-size:.85rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Nummer</label>
+            <input id="editModalNumber" class="input" type="text" placeholder="z.B. 7" />
+          </div>
+          <div>
+            <label style="display:block;font-size:.85rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Rolle</label>
+            <select id="editModalRole" class="select">
+              <option value="field">Feldspieler</option>
+              <option value="goalkeeper">Torwart</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Abbrechen</button>
+          <button type="button" class="btn btn-primary" onclick="saveEditPlayer()">Speichern</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'hb-scout-team-db-v2';
+
+    function getTemplateTeam(){
+      // Standard-Vorlage: 2 Torwarte + 12 Feldspieler
+      // Auf dem Feld: 1 TW + 6 Feldspieler (ready to play)
+      return {
+        players: [
+          // Torwarte
+          { id: 1, name: 'Torwart 1', number: '1', role: 'goalkeeper', onCourt: true },   // Im Tor
+          { id: 2, name: 'Torwart 2', number: '12', role: 'goalkeeper', onCourt: false }, // Bank
+          // Feldspieler auf dem Feld (6)
+          { id: 3, name: 'Spieler 1', number: '2', role: 'field', onCourt: true },
+          { id: 4, name: 'Spieler 2', number: '3', role: 'field', onCourt: true },
+          { id: 5, name: 'Spieler 3', number: '4', role: 'field', onCourt: true },
+          { id: 6, name: 'Spieler 4', number: '5', role: 'field', onCourt: true },
+          { id: 7, name: 'Spieler 5', number: '6', role: 'field', onCourt: true },
+          { id: 8, name: 'Spieler 6', number: '7', role: 'field', onCourt: true },
+          // Feldspieler auf der Bank (6)
+          { id: 9, name: 'Spieler 7', number: '8', role: 'field', onCourt: false },
+          { id: 10, name: 'Spieler 8', number: '9', role: 'field', onCourt: false },
+          { id: 11, name: 'Spieler 9', number: '10', role: 'field', onCourt: false },
+          { id: 12, name: 'Spieler 10', number: '11', role: 'field', onCourt: false },
+          { id: 13, name: 'Spieler 11', number: '13', role: 'field', onCourt: false },
+          { id: 14, name: 'Spieler 12', number: '14', role: 'field', onCourt: false }
+        ]
+      };
+    }
+
+    // ─── OCR Funktionen ───
+    async function runOCR(file){
+      const statusEl = document.getElementById('ocrStatus');
+      const resultEl = document.getElementById('ocrResult');
+      const textEl = document.getElementById('ocrText');
+      
+      statusEl.style.display = 'block';
+      resultEl.style.display = 'none';
+      
+      try {
+        let extractedText = '';
+        
+        // PDF Verarbeitung
+        if(file.type === 'application/pdf'){
+          if(!window.pdfjsLib){
+            statusEl.innerHTML = '⏳ Lade PDF-Bibliothek...';
+            // Warte bis PDF.js geladen ist
+            await new Promise(resolve => {
+              const check = setInterval(() => {
+                if(window.pdfjsLib){
+                  clearInterval(check);
+                  resolve();
+                }
+              }, 200);
+              setTimeout(() => { clearInterval(check); resolve(); }, 10000);
+            });
+          }
+          
+          if(!window.pdfjsLib){
+            statusEl.innerHTML = '❌ PDF-Bibliothek konnte nicht geladen werden. Bitte Internetverbindung prüfen.';
+            return;
+          }
+          
+          statusEl.innerHTML = '📄 Lese PDF...';
+          
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
+          
+          statusEl.innerHTML = `📄 PDF mit ${pdf.numPages} Seite(n). Versuche direkten Text-Extract...`;
+          
+          // Versuche zuerst direkten Text-Extract
+          let directText = '';
+          for(let i = 1; i <= pdf.numPages; i++){
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            directText += pageText + '\n';
+          }
+          
+          // Wenn genug Text gefunden wurde, nutze ihn
+          if(directText.trim().length > 20){
+            statusEl.innerHTML = '✓ Text direkt aus PDF extrahiert!';
+            extractedText = directText;
+          } else {
+            // Sonst: PDF in Bilder umwandeln und OCR
+            statusEl.innerHTML = '🔍 Kein Text im PDF gefunden. Starte OCR...';
+            
+            let allOCRText = '';
+            for(let i = 1; i <= pdf.numPages; i++){
+              statusEl.innerHTML = `🔍 Verarbeite Seite ${i}/${pdf.numPages} mit OCR...`;
+              
+              const page = await pdf.getPage(i);
+              const viewport = page.getViewport({scale: 2.0});
+              const canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext('2d');
+              
+              await page.render({canvasContext: ctx, viewport: viewport}).promise;
+              
+              const result = await Tesseract.recognize(canvas, 'deu', {
+                logger: m => {
+                  if(m.status === 'recognizing text'){
+                    const percent = Math.round(m.progress * 100);
+                    statusEl.innerHTML = `🔍 Seite ${i}/${pdf.numPages} OCR... (${percent}%)`;
+                  }
+                }
+              });
+              
+              allOCRText += result.data.text + '\n';
+            }
+            extractedText = allOCRText;
+          }
+        } else {
+          // Bild-Verarbeitung
+          statusEl.innerHTML = '🔍 Erkenne Text in Bild... (0%)';
+          
+          const result = await Tesseract.recognize(file, 'deu', {
+            logger: m => {
+              if(m.status === 'recognizing text'){
+                const percent = Math.round(m.progress * 100);
+                statusEl.innerHTML = `🔍 Erkenne Text... (${percent}%)`;
+              }
+            }
+          });
+          
+          extractedText = result.data.text;
+        }
+        
+        // Versuche Spielerzeilen zu extrahieren
+        const lines = extractedText.split('\n')
+          .map(l => l.trim())
+          .filter(l => l.length > 2);
+        
+        const playerLines = [];
+        lines.forEach(line => {
+          // Pattern: Nummer (1-99) + Leerzeichen + Name
+          const match = line.match(/^(\d{1,2})\s+(.+)$/);
+          if(match){
+            playerLines.push(`${match[1]} ${match[2]}`);
+          } else {
+            // Auch Zeilen ohne klares Format anzeigen
+            if(line.length > 3 && line.length < 60){
+              playerLines.push(line);
+            }
+          }
+        });
+        
+        statusEl.innerHTML = `✓ ${playerLines.length} mögliche Zeilen erkannt. Bitte prüfen und bearbeiten:`;
+        document.getElementById('ocrText').value = playerLines.join('\n');
+        resultEl.style.display = 'block';
+        
+      } catch(err) {
+        statusEl.innerHTML = '❌ Fehler: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    function saveOCRTeam(){
+      const teamName = document.getElementById('ocrTeamName').value.trim();
+      const text = document.getElementById('ocrText').value.trim();
+      
+      if(!teamName){
+        alert('Bitte einen Teamnamen eingeben.');
+        return;
+      }
+      
+      if(!text){
+        alert('Keine Spielerdaten vorhanden.');
+        return;
+      }
+      
+      // Parse Zeilen
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      const players = [];
+      let nextId = 1;
+      
+      if(state.teamDatabase && state.teamDatabase.length > 0){
+        const maxId = Math.max(...state.teamDatabase.flatMap(t => t.players.map(p => p.id || 0)));
+        nextId = maxId + 1;
+      }
+      
+      lines.forEach((line, idx) => {
+        // Check if marked as goalkeeper (with asterisks)
+        const isGK = /\*.*\*/.test(line);
+        const cleanLine = line.replace(/\*/g, '').trim();
+        
+        // Parse Nummer + Name
+        const match = cleanLine.match(/^(\d{1,2})\s+(.+)$/);
+        let number = '';
+        let name = cleanLine;
+        
+        if(match){
+          number = match[1];
+          name = match[2].trim();
+        }
+        
+        if(!name) return;
+        
+        players.push({
+          id: nextId + idx,
+          name: name,
+          number: number,
+          role: isGK ? 'goalkeeper' : 'field',
+          onCourt: idx < 7  // Erste 7 auf dem Feld (1 TW + 6 Feldspieler)
+        });
+      });
+      
+      if(players.length === 0){
+        alert('Keine gültigen Spieler erkannt.');
+        return;
+      }
+      
+      // Stelle sicher dass mindestens ein Torwart vorhanden ist
+      const hasGK = players.some(p => p.role === 'goalkeeper');
+      if(!hasGK && players.length > 0){
+        // Ersten Spieler zum TW machen
+        players[0].role = 'goalkeeper';
+      }
+      
+      // Team speichern
+      const newTeam = {
+        id: createId(),
+        name: teamName,
+        players: players
+      };
+      
+      state.teamDatabase.push(newTeam);
+      saveDatabase();
+      renderDatabaseList();
+      renderLoadSelects();
+      
+      // Reset OCR UI
+      document.getElementById('ocrFileInput').value = '';
+      document.getElementById('ocrStatus').style.display = 'none';
+      document.getElementById('ocrResult').style.display = 'none';
+      document.getElementById('ocrTeamName').value = '';
+      document.getElementById('ocrText').value = '';
+      
+      showNotice(`✓ Team „${teamName}" mit ${players.length} Spielern erstellt!`, 'ok');
+    }
+
+    function copyTemplateTeam(){
+      const teamName = prompt('Neuer Teamname für die Vorlage:');
+      if(!teamName || !teamName.trim()) return;
+      
+      const template = getTemplateTeam();
+      
+      // Neue IDs generieren (eindeutig)
+      let nextId = 1;
+      if(state.teamDatabase && state.teamDatabase.length > 0){
+        const maxId = Math.max(...state.teamDatabase.flatMap(t => 
+          t.players.map(p => p.id || 0)
+        ));
+        nextId = maxId + 1;
+      }
+      
+      // Spieler-IDs neu vergeben
+      const newPlayers = template.players.map((p, idx) => ({
+        ...p,
+        id: nextId + idx
+      }));
+      
+      // Neues Team erstellen
+      const newTeam = {
+        id: createId(),
+        name: teamName.trim(),
+        players: newPlayers
+      };
+      
+      // In Datenbank speichern
+      state.teamDatabase.push(newTeam);
+      saveDatabase();
+      
+      // UI aktualisieren
+      renderDatabaseList();
+      renderLoadSelects();
+      showNotice(`✓ Team „${newTeam.name}" erstellt!`, 'ok');
+    }
+
+    const state = {
+      teamDatabase: [],
+      draftPlayers: [],
+      teams: {
+        A: { id: '', name: 'Team A', score: 0, players: [] },
+        B: { id: '', name: 'Team B', score: 0, players: [] }
+      },
+      attackingTeam: 'A',
+      selectedShooterId: '',
+      selectedGoalkeeperId: '',
+      selectedShotType: '',
+      selectedPosition: '',
+      selectingGKZone: false,
+      actions: []
+    };
+
+    const el = {
+      dbTeamName: document.getElementById('dbTeamName'),
+      dbPlayerName: document.getElementById('dbPlayerName'),
+      dbPlayerNumber: document.getElementById('dbPlayerNumber'),
+      dbPlayerRole: document.getElementById('dbPlayerRole'),
+      dbAddPlayerBtn: document.getElementById('dbAddPlayerBtn'),
+      draftPlayers: document.getElementById('draftPlayers'),
+      saveTeamBtn: document.getElementById('saveTeamBtn'),
+      teamDatabaseList: document.getElementById('teamDatabaseList'),
+      dbCount: document.getElementById('dbCount'),
+      loadTeamASelect: document.getElementById('loadTeamASelect'),
+      loadTeamBSelect: document.getElementById('loadTeamBSelect'),
+      loadTeamABtn: document.getElementById('loadTeamABtn'),
+      loadTeamBBtn: document.getElementById('loadTeamBBtn'),
+      scoreTeamAName: document.getElementById('scoreTeamAName'),
+      scoreTeamBName: document.getElementById('scoreTeamBName'),
+      scoreA: document.getElementById('scoreA'),
+      scoreB: document.getElementById('scoreB'),
+      teamATitle: document.getElementById('teamATitle'),
+      teamBTitle: document.getElementById('teamBTitle'),
+      playerListAField: document.getElementById('playerListAField'),
+      playerListABench: document.getElementById('playerListABench'),
+      playerListBField: document.getElementById('playerListBField'),
+      playerListBBench: document.getElementById('playerListBBench'),
+      currentAttackTeam: document.getElementById('currentAttackTeam'),
+      currentShooter: document.getElementById('currentShooter'),
+      currentGoalkeeper: document.getElementById('currentGoalkeeper'),
+      currentShotType: document.getElementById('currentShotType'),
+      currentPosition: document.getElementById('currentPosition'),
+      notice: document.getElementById('notice'),
+      newGameBtn: document.getElementById('newGameBtn'),
+      clearLogBtn: document.getElementById('clearLogBtn'),
+      logList: document.getElementById('logList'),
+      statsTableBody: document.getElementById('statsTableBody'),
+      statGoalsA: document.getElementById('statGoalsA'),
+      statGoalsB: document.getElementById('statGoalsB'),
+      statShotsA: document.getElementById('statShotsA'),
+      statShotsB: document.getElementById('statShotsB'),
+      statQuoteA: document.getElementById('statQuoteA'),
+      statQuoteB: document.getElementById('statQuoteB')
+    };
+
+    function createId(){
+      if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'id_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+    }
+
+    function showNotice(message, type='error'){
+      el.notice.textContent = message;
+      el.notice.className = 'notice show ' + type;
+      clearTimeout(showNotice.timer);
+      showNotice.timer = setTimeout(() => {
+        el.notice.className = 'notice';
+        el.notice.textContent = '';
+      }, 2600);
+    }
+
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatPlayerLabel(player){
+      return player.number ? player.number + ' · ' + player.name : player.name;
+    }
+
+    function getOppositeTeam(teamKey){
+      return teamKey === 'A' ? 'B' : 'A';
+    }
+
+    function getCurrentTeam(teamKey){
+      return state.teams[teamKey];
+    }
+
+    function getPlayerFromCurrentTeam(teamKey, playerId){
+      return getCurrentTeam(teamKey).players.find(p => p.id === playerId) || null;
+    }
+
+    function findAnyCurrentPlayer(playerId){
+      return getPlayerFromCurrentTeam('A', playerId) || getPlayerFromCurrentTeam('B', playerId) || null;
+    }
+
+    function saveDatabase(){
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ teamDatabase: state.teamDatabase }));
+      }catch(e){
+        console.warn('Speichern fehlgeschlagen', e);
+      }
+    }
+
+    function loadDatabase(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw) return;
+        const data = JSON.parse(raw);
+        if(Array.isArray(data?.teamDatabase)){
+          state.teamDatabase = data.teamDatabase.map(team => ({
+            id: team.id || createId(),
+            name: team.name || 'Unbenanntes Team',
+            players: Array.isArray(team.players) ? team.players.map(player => ({
+              id: player.id || createId(),
+              name: player.name || '',
+              number: player.number || '',
+              role: player.role === 'goalkeeper' ? 'goalkeeper' : 'field',
+              onCourt: !!player.onCourt
+            })).filter(p => p.name.trim()) : []
+          }));
+        }
+      }catch(e){
+        console.warn('Laden fehlgeschlagen', e);
+      }
+    }
+
+    function resetDraftInputs(){
+      el.dbPlayerName.value = '';
+      el.dbPlayerNumber.value = '';
+    }
+
+    function addDraftPlayer(){
+      const name = el.dbPlayerName.value.trim();
+      const number = el.dbPlayerNumber.value.trim();
+      if(!name){
+        showNotice('Bitte einen Spielernamen für das neue Team eingeben.');
+        return;
+      }
+      const role = el.dbPlayerRole.value;
+      state.draftPlayers.push({ id: createId(), name, number, role, onCourt: role === 'goalkeeper' });
+      resetDraftInputs();
+      renderDraftPlayers();
+      showNotice('Spieler zur neuen Mannschaft hinzugefügt.', 'ok');
+    }
+
+    function removeDraftPlayer(id){
+      state.draftPlayers = state.draftPlayers.filter(p => p.id !== id);
+      renderDraftPlayers();
+    }
+
+    function saveNewTeam(){
+      const teamName = el.dbTeamName.value.trim();
+      if(!teamName){
+        showNotice('Bitte zuerst einen Teamnamen eingeben.');
+        return;
+      }
+      if(state.draftPlayers.length === 0){
+        showNotice('Bitte mindestens einen Spieler zum Team hinzufügen.');
+        return;
+      }
+      const exists = state.teamDatabase.some(team => team.name.toLowerCase() === teamName.toLowerCase());
+      if(exists){
+        showNotice('Dieses Team gibt es bereits in der Datenbank.');
+        return;
+      }
+      state.teamDatabase.push({
+        id: createId(),
+        name: teamName,
+        players: state.draftPlayers.map(player => ({ id: createId(), name: player.name, number: player.number, role: player.role, onCourt: !!player.onCourt }))
+      });
+      state.teamDatabase.sort((a,b) => a.name.localeCompare(b.name, 'de'));
+      state.draftPlayers = [];
+      el.dbTeamName.value = '';
+      resetDraftInputs();
+      saveDatabase();
+      renderAll();
+      showNotice('Neues Team in der Datenbank gespeichert.', 'ok');
+    }
+
+    function deleteDatabaseTeam(teamId){
+      state.teamDatabase = state.teamDatabase.filter(team => team.id !== teamId);
+      if(state.teams.A.id === teamId){
+        state.teams.A = { id: '', name: 'Team A', score: state.teams.A.score, players: [] };
+        state.selectedShooterId = '';
+      }
+      if(state.teams.B.id === teamId){
+        state.teams.B = { id: '', name: 'Team B', score: state.teams.B.score, players: [] };
+        state.selectedGoalkeeperId = '';
+      }
+      saveDatabase();
+      renderAll();
+      showNotice('Team aus der Datenbank gelöscht.', 'ok');
+    }
+
+    function loadTeamIntoMatch(slot, teamId){
+      const team = state.teamDatabase.find(t => t.id === teamId);
+      if(!team){
+        showNotice('Bitte ein gespeichertes Team auswählen.');
+        return;
+      }
+      state.teams[slot] = {
+        id: team.id,
+        name: team.name,
+        score: state.teams[slot].score,
+        players: team.players.map(player => ({ ...player }))
+      };
+      if(slot === 'A' && state.attackingTeam === 'A') state.selectedShooterId = '';
+      if(slot === 'B' && state.attackingTeam === 'B') state.selectedShooterId = '';
+      state.selectedGoalkeeperId = '';
+      
+      // Auto-select goalkeeper from the newly loaded team
+      const defendingTeam = slot === 'A' ? 'B' : 'A';
+      if(state.attackingTeam === defendingTeam){
+        // If this team is defending, auto-select its goalkeeper
+        const gk = state.teams[slot].players.find(p => p.role === 'goalkeeper' && p.onCourt);
+        if(gk){
+          state.selectedGoalkeeperId = gk.id;
+        }
+      }
+      
+      renderAll();
+      showNotice(team.name + ' wurde als Team ' + slot + ' geladen.', 'ok');
+    }
+
+    function setAttackingTeam(teamKey){
+      state.attackingTeam = teamKey;
+      const shooter = findAnyCurrentPlayer(state.selectedShooterId);
+      // Reset shooter wenn er nicht vom neuen angreifenden Team ist
+      if(!shooter || !getCurrentTeam(teamKey).players.some(p => p.id === shooter.id)) state.selectedShooterId = '';
+      // TW bleibt konstant — wird NOT zurückgesetzt!
+      renderAll();
+    }
+
+    function openGoalkeeperZoneModal(){
+      // Toggle zone selector mode
+      state.selectingGKZone = !state.selectingGKZone;
+      renderAll();
+      if(state.selectingGKZone){
+        showNotice('🧤 Wähle die Zone wo der TW gehalten hat:', 'ok');
+      }
+    }
+
+    function closeGoalkeeperZoneModal(){
+      state.selectingGKZone = false;
+      renderAll();
+    }
+
+    function setShooter(playerId, teamKey){
+      // Automatisch das angreifende Team setzen basierend auf dem Schützen
+      state.attackingTeam = teamKey;
+      state.selectedShooterId = playerId;
+      
+      // Automatisch den Torwart des verteidigenden Teams setzen
+      const defendingTeam = getOppositeTeam(teamKey);
+      const defendingTeamObj = getCurrentTeam(defendingTeam);
+      const gk = defendingTeamObj.players.find(p => p.role === 'goalkeeper' && p.onCourt);
+      if(gk){
+        state.selectedGoalkeeperId = gk.id;
+      }
+      
+      renderAll();
+    }
+
+    function setGoalkeeper(playerId, teamKey){
+      // Torwart muss aus dem verteidigenden Team kommen
+      if(teamKey !== getOppositeTeam(state.attackingTeam)){
+        showNotice('Torwart muss aus dem verteidigenden Team kommen.');
+        return;
+      }
+      state.selectedGoalkeeperId = playerId;
+      renderAll();
+    }
+
+    function validateActionSetup(){
+      if(!state.teams.A.id || !state.teams.B.id){
+        showNotice('Bitte zuerst zwei Teams aus der Datenbank ins Spiel laden.');
+        return false;
+      }
+      if(!state.selectedShooterId){
+        showNotice('Bitte zuerst einen Schützen auswählen.');
+        return false;
+      }
+      if(!state.selectedGoalkeeperId){
+        showNotice('Kein Torwart im gegnerischen Team auf dem Feld.');
+        return false;
+      }
+      if(!state.selectedShotType){
+        showNotice('Bitte zuerst eine Angriffsart wählen.');
+        return false;
+      }
+      if(!state.selectedPosition){
+        showNotice('Bitte zuerst eine Wurfposition wählen.');
+        return false;
+      }
+      return true;
+    }
+
+    function registerAction(result, zone){
+      // Special case: if clicking "Gehalten" button, activate zone selection mode
+      if(result === 'GEHALTEN' && zone === 'TW Parade'){
+        state.selectingGKZone = !state.selectingGKZone;
+        renderAll();
+        if(state.selectingGKZone){
+          showNotice('🧤 Wähle die Zone wo gehalten wurde (OL/OM/OR/UL/UM/UR):', 'ok');
+        } else {
+          showNotice('Gehalten abgebrochen.', 'ok');
+        }
+        return;
+      }
+
+      // If in zone selection mode and a goal zone is selected
+      if(state.selectingGKZone && (result === 'TOR' || result === 'GEHALTEN')){
+        if(!validateActionSetup()) return;
+        const shooter = findAnyCurrentPlayer(state.selectedShooterId);
+        const goalkeeper = findAnyCurrentPlayer(state.selectedGoalkeeperId);
+        if(!shooter || !goalkeeper){
+          showNotice('Schütze oder Torwart fehlt.');
+          return;
+        }
+        
+        // Speichere die Parade mit der Zone
+        const action = {
+          id: createId(),
+          ts: new Date().toISOString(),
+          attackingTeam: state.attackingTeam,
+          shooterId: shooter.id,
+          shooterName: formatPlayerLabel(shooter),
+          goalkeeperId: goalkeeper.id,
+          goalkeeperName: formatPlayerLabel(goalkeeper),
+          shotType: state.selectedShotType,
+          position: state.selectedPosition,
+          result: 'GEHALTEN',
+          zone: zone  // Zone wird von der angetippten Tor-Zone verwendet
+        };
+        state.actions.unshift(action);
+        state.selectedShotType = '';
+        state.selectedPosition = '';
+        state.selectingGKZone = false;
+        
+        saveState();
+        renderAll();
+        showNotice(`✓ Parade in ${zone} gespeichert!`, 'ok');
+        return;
+      }
+
+      // Normal action registration (Tor oder Vorbei)
+      if(!validateActionSetup()) return;
+      const shooter = findAnyCurrentPlayer(state.selectedShooterId);
+      const goalkeeper = findAnyCurrentPlayer(state.selectedGoalkeeperId);
+      if(!shooter || !goalkeeper){
+        showNotice('Schütze oder Torwart fehlt.');
+        return;
+      }
+      
+      // Speichere die Aktion mit der Zone
+      const action = {
+        id: createId(),
+        ts: new Date().toISOString(),
+        attackingTeam: state.attackingTeam,
+        shooterId: shooter.id,
+        shooterName: formatPlayerLabel(shooter),
+        goalkeeperId: goalkeeper.id,
+        goalkeeperName: formatPlayerLabel(goalkeeper),
+        shotType: state.selectedShotType,
+        position: state.selectedPosition,
+        result,
+        zone
+      };
+      state.actions.unshift(action);
+      if(result === 'TOR') state.teams[state.attackingTeam].score += 1;
+      state.selectedShotType = '';
+      state.selectedPosition = '';
+      
+      saveState();
+      renderAll();
+      showNotice(`✓ Aktion gespeichert!`);
+    }
+
+    function clearAllActions(){
+      state.actions = [];
+      state.teams.A.score = 0;
+      state.teams.B.score = 0;
+      renderAll();
+      showNotice('Alle Aktionen gelöscht.', 'ok');
+    }
+
+    function newGame(){
+      state.actions = [];
+      state.teams.A.score = 0;
+      state.teams.B.score = 0;
+      state.selectedShooterId = '';
+      state.selectedGoalkeeperId = '';
+      state.selectedShotType = '';
+      state.selectedPosition = '';
+      state.selectingGKZone = false;
+      saveState();
+      renderAll();
+      showNotice('Neues Spiel gestartet.', 'ok');
+    }
+
+    function endGame(){
+      // Sammle alle Spielerdaten
+      const teamA = state.teams.A;
+      const teamB = state.teams.B;
+      
+      if(state.actions.length === 0){
+        if(!confirm('Es wurden noch keine Aktionen erfasst. Spiel trotzdem beenden?')) return;
+      }
+      
+      const gameDate = new Date().toISOString();
+      const gameLabel = `${teamA.name} vs ${teamB.name} (${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})})`;
+      const finalScore = `${teamA.score}:${teamB.score}`;
+      
+      // Erstelle Stats für alle Spieler die in Aktionen vorkommen
+      const allPlayers = [
+        ...teamA.players.map(p => ({...p, team: teamA.name, teamKey: 'A'})),
+        ...teamB.players.map(p => ({...p, team: teamB.name, teamKey: 'B'}))
+      ];
+      
+      const playerStatsEntries = [];
+      
+      allPlayers.forEach(player => {
+        // Stats als Schütze
+        const shotsAsShooter = state.actions.filter(a => a.shooterId === player.id);
+        // Stats als Torwart
+        const shotsAsGK = state.actions.filter(a => a.goalkeeperId === player.id);
+        
+        if(shotsAsShooter.length === 0 && shotsAsGK.length === 0) return; // Spieler ohne Beteiligung überspringen
+        
+        const goalsScored = shotsAsShooter.filter(a => a.result === 'TOR').length;
+        const shotsTotal = shotsAsShooter.length;
+        const savesAsGK = shotsAsGK.filter(a => a.result === 'GEHALTEN').length;
+        const goalsAgainst = shotsAsGK.filter(a => a.result === 'TOR').length;
+        const shotsFacedAsGK = shotsAsGK.length;
+        
+        const entry = {
+          id: createId(),
+          gameDate: gameDate,
+          gameLabel: gameLabel,
+          finalScore: finalScore,
+          playerName: player.name,
+          playerNumber: player.number || '',
+          team: player.team,
+          role: player.role,
+          // Schützen-Stats
+          shotsTotal: shotsTotal,
+          goalsScored: goalsScored,
+          shotsMissed: shotsTotal - goalsScored,
+          shootingQuote: shotsTotal > 0 ? Math.round((goalsScored / shotsTotal) * 100) : 0,
+          // Torwart-Stats
+          shotsFacedAsGK: shotsFacedAsGK,
+          savesAsGK: savesAsGK,
+          goalsAgainst: goalsAgainst,
+          saveQuote: shotsFacedAsGK > 0 ? Math.round((savesAsGK / shotsFacedAsGK) * 100) : 0,
+          // Detail-Aktionen für späteren Zugriff
+          actions: [...shotsAsShooter, ...shotsAsGK]
+        };
+        
+        playerStatsEntries.push(entry);
+      });
+      
+      // In Datenbank speichern
+      if(!state.playerStatsDB) state.playerStatsDB = [];
+      state.playerStatsDB.push(...playerStatsEntries);
+      savePlayerStatsDB();
+      
+      const summary = `Spiel beendet!\n\n${teamA.name} ${finalScore} ${teamB.name}\n\n${playerStatsEntries.length} Spielerdaten in der Datenbank gespeichert.`;
+      
+      if(confirm(summary + '\n\nNeues Spiel starten?')){
+        newGame();
+        switchView('setup');
+      }
+    }
+
+    function savePlayerStatsDB(){
+      try {
+        localStorage.setItem('hb-scout-player-stats', JSON.stringify(state.playerStatsDB || []));
+      } catch(e) {
+        console.error('Fehler beim Speichern der Spielerdaten:', e);
+      }
+    }
+
+    function loadPlayerStatsDB(){
+      try {
+        const raw = localStorage.getItem('hb-scout-player-stats');
+        if(raw){
+          state.playerStatsDB = JSON.parse(raw);
+        } else {
+          state.playerStatsDB = [];
+        }
+      } catch(e) {
+        state.playerStatsDB = [];
+      }
+    }
+
+    function renderPlayerStatsDB(){
+      const list = document.getElementById('playerStatsList');
+      const count = document.getElementById('playerDbCount');
+      const entries = state.playerStatsDB || [];
+      
+      count.textContent = entries.length + (entries.length === 1 ? ' Eintrag' : ' Einträge');
+      
+      if(entries.length === 0){
+        list.innerHTML = '<div class="empty">Noch keine Spielerdaten gespeichert.</div>';
+        return;
+      }
+      
+      // Gruppiere nach Spielen
+      const games = {};
+      entries.forEach(entry => {
+        if(!games[entry.gameLabel]) games[entry.gameLabel] = [];
+        games[entry.gameLabel].push(entry);
+      });
+      
+      let html = '';
+      Object.keys(games).reverse().forEach(gameLabel => {
+        const gameEntries = games[gameLabel];
+        html += `<div style="margin-bottom:10px;padding:8px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)">`;
+        html += `<div style="font-weight:700;margin-bottom:6px;font-size:.88rem">🏐 ${escapeHtml(gameLabel)}</div>`;
+        html += `<table style="width:100%;font-size:.75rem"><thead><tr><th>Spieler</th><th>Team</th><th>T</th><th>W</th><th>%</th><th>P</th><th>K</th></tr></thead><tbody>`;
+        gameEntries.forEach(e => {
+          html += `<tr>
+            <td><strong>${escapeHtml(e.playerNumber ? e.playerNumber + ' · ' : '')}${escapeHtml(e.playerName)}</strong>${e.role === 'goalkeeper' ? ' 🧤' : ''}</td>
+            <td>${escapeHtml(e.team)}</td>
+            <td>${e.goalsScored}</td>
+            <td>${e.shotsTotal}</td>
+            <td>${e.shootingQuote}%</td>
+            <td>${e.savesAsGK}</td>
+            <td>${e.goalsAgainst}</td>
+          </tr>`;
+        });
+        html += `</tbody></table>`;
+        html += `<div style="font-size:.7rem;color:var(--muted);margin-top:4px">T=Tore, W=Würfe, %=Quote, P=Paraden, K=Kassiert</div>`;
+        html += `</div>`;
+      });
+      
+      list.innerHTML = html;
+    }
+
+    function exportPlayerStatsCSV(){
+      const entries = state.playerStatsDB || [];
+      if(entries.length === 0){
+        showNotice('Keine Daten zum Exportieren.');
+        return;
+      }
+      
+      const headers = ['Datum','Spiel','Endstand','Spieler','Nr','Team','Rolle','Tore','Würfe','Wurfquote%','Würfe gegen','Paraden','Kassiert','Paradenquote%'];
+      const rows = entries.map(e => [
+        new Date(e.gameDate).toLocaleDateString('de-DE'),
+        e.gameLabel,
+        e.finalScore,
+        e.playerName,
+        e.playerNumber,
+        e.team,
+        e.role === 'goalkeeper' ? 'Torwart' : 'Feldspieler',
+        e.goalsScored,
+        e.shotsTotal,
+        e.shootingQuote,
+        e.shotsFacedAsGK,
+        e.savesAsGK,
+        e.goalsAgainst,
+        e.saveQuote
+      ]);
+      
+      const csv = [headers.join(';'), ...rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'))].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `hb-scout-spielerdaten-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showNotice('CSV exportiert!', 'ok');
+    }
+
+    function clearPlayerStatsDB(){
+      if(!confirm('Wirklich ALLE Spielerdaten löschen? Das kann nicht rückgängig gemacht werden.')) return;
+      state.playerStatsDB = [];
+      savePlayerStatsDB();
+      renderPlayerStatsDB();
+      showNotice('Spielerdaten gelöscht.', 'ok');
+    }
+
+    function renderDraftPlayers(){
+      el.draftPlayers.innerHTML = '';
+      if(state.draftPlayers.length === 0){
+        el.draftPlayers.innerHTML = '<div class="empty">Noch keine Spieler im neuen Team.</div>';
+        return;
+      }
+      state.draftPlayers.forEach(player => {
+        const item = document.createElement('div');
+        item.className = 'player-item';
+        item.innerHTML = `
+          <div class="player-main">
+            <div class="player-name">${escapeHtml(formatPlayerLabel(player))}</div>
+            <div class="player-tags"><span class="chip">Neues Team</span><span class="chip">${player.role === 'goalkeeper' ? 'Torwart' : 'Feldspieler'}</span></div>
+          </div>
+          <div class="item-actions">
+            <button type="button" class="mini-btn delete">Löschen</button>
+          </div>
+        `;
+        item.querySelector('.mini-btn.delete').addEventListener('click', () => removeDraftPlayer(player.id));
+        el.draftPlayers.appendChild(item);
+      });
+    }
+
+    function renderDatabaseList(){
+      el.teamDatabaseList.innerHTML = '';
+      el.dbCount.textContent = state.teamDatabase.length + (state.teamDatabase.length === 1 ? ' Team' : ' Teams');
+      if(state.teamDatabase.length === 0){
+        el.teamDatabaseList.innerHTML = '<div class="empty">Noch keine Teams gespeichert.</div>';
+        return;
+      }
+      state.teamDatabase.forEach(team => {
+        const item = document.createElement('div');
+        item.className = 'db-item';
+        item.innerHTML = `
+          <div class="db-main">
+            <div class="db-name">${escapeHtml(team.name)}</div>
+            <div class="db-meta"><span class="chip">${team.players.length} Spieler</span><span class="chip">${team.players.filter(p => p.role === 'goalkeeper').length} TW</span></div>
+          </div>
+          <div class="item-actions">
+            <button type="button" class="mini-btn load" data-slot="A">Als A</button>
+            <button type="button" class="mini-btn load" data-slot="B">Als B</button>
+            <button type="button" class="mini-btn delete">Löschen</button>
+          </div>
+        `;
+        item.querySelector('[data-slot="A"]').addEventListener('click', () => loadTeamIntoMatch('A', team.id));
+        item.querySelector('[data-slot="B"]').addEventListener('click', () => loadTeamIntoMatch('B', team.id));
+        item.querySelector('.mini-btn.delete').addEventListener('click', () => deleteDatabaseTeam(team.id));
+        el.teamDatabaseList.appendChild(item);
+      });
+    }
+
+    function renderLoadSelects(){
+      const base = '<option value="">— Team aus Datenbank wählen —</option>';
+      el.loadTeamASelect.innerHTML = base;
+      el.loadTeamBSelect.innerHTML = base;
+      state.teamDatabase.forEach(team => {
+        const optA = document.createElement('option');
+        optA.value = team.id;
+        optA.textContent = team.name;
+        if(team.id === state.teams.A.id) optA.selected = true;
+        el.loadTeamASelect.appendChild(optA);
+        const optB = document.createElement('option');
+        optB.value = team.id;
+        optB.textContent = team.name;
+        if(team.id === state.teams.B.id) optB.selected = true;
+        el.loadTeamBSelect.appendChild(optB);
+      });
+    }
+
+    function renderScoreAndTitles(){
+      el.scoreTeamAName.textContent = state.teams.A.name;
+      el.scoreTeamBName.textContent = state.teams.B.name;
+      el.teamATitle.textContent = state.teams.A.name;
+      el.teamBTitle.textContent = state.teams.B.name;
+      el.scoreA.textContent = state.teams.A.score;
+      el.scoreB.textContent = state.teams.B.score;
+    }
+
+    function renderAttackTabs(){
+      document.querySelectorAll('[data-attack-team]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.attackTeam === state.attackingTeam);
+      });
+    }
+
+    function toggleOnCourt(teamKey, playerId){
+      const team = getCurrentTeam(teamKey);
+      const player = team.players.find(p => p.id === playerId);
+      if(!player) return;
+      player.onCourt = !player.onCourt;
+      renderAll();
+    }
+
+    function renderCurrentPlayers(teamKey, container, onCourtOnly){
+      const team = getCurrentTeam(teamKey);
+      container.innerHTML = '';
+      if(team.players.length === 0){
+        container.innerHTML = '<div class="empty">Noch kein Team geladen.</div>';
+        return;
+      }
+      const filtered = team.players.filter(player => !!player.onCourt === onCourtOnly);
+      if(filtered.length === 0){
+        container.innerHTML = '<div class="empty">Keine Spieler in diesem Bereich.</div>';
+        return;
+      }
+      filtered.forEach(player => {
+        const isShooter = state.selectedShooterId === player.id;
+        const isGoalkeeper = state.selectedGoalkeeperId === player.id;
+        // Jeder Feldspieler kann Schütze sein (egal welches Team)
+        const canBeShooter = player.role !== 'goalkeeper';
+        const canBeGoalkeeper = player.role === 'goalkeeper';
+        const roleLabel = player.role === 'goalkeeper' ? 'Torwart' : 'Feldspieler';
+        const item = document.createElement('div');
+        item.className = 'player-item';
+        item.innerHTML = `
+          <div class="player-main">
+            <div class="player-name">${escapeHtml(formatPlayerLabel(player))}</div>
+            <div class="player-tags">
+              <span class="chip">${escapeHtml(team.name)}</span>
+              <span class="chip">${escapeHtml(roleLabel)}</span>
+              ${isShooter ? '<span class="chip shooter">Schütze</span>' : ''}
+              ${isGoalkeeper ? '<span class="chip gk">Torwart</span>' : ''}
+            </div>
+          </div>
+          <div class="item-actions">
+            <button type="button" class="mini-btn shooter" ${canBeShooter ? '' : 'disabled'}>Schütze</button>
+            <button type="button" class="mini-btn load" title="${onCourtOnly ? 'Aufs Feld' : 'Zur Bank'}">${onCourtOnly ? 'Bank' : 'Feld'}</button>
+            <button type="button" class="mini-btn delete" title="Bearbeiten">✎</button>
+          </div>
+        `;
+        item.querySelector('.mini-btn.shooter').addEventListener('click', () => setShooter(player.id, teamKey));
+        item.querySelector('.mini-btn.load').addEventListener('click', () => toggleOnCourt(teamKey, player.id));
+        item.querySelector('.mini-btn.delete').addEventListener('click', () => openEditPlayerModal(teamKey, player.id));
+        container.appendChild(item);
+      });
+    }
+
+    function renderStatus(){
+      const shooter = findAnyCurrentPlayer(state.selectedShooterId);
+      const goalkeeper = findAnyCurrentPlayer(state.selectedGoalkeeperId);
+      el.currentAttackTeam.textContent = getCurrentTeam(state.attackingTeam).name;
+      el.currentShooter.textContent = shooter ? formatPlayerLabel(shooter) : '— nicht gewählt —';
+      el.currentGoalkeeper.textContent = goalkeeper ? formatPlayerLabel(goalkeeper) : '— nicht gewählt —';
+      el.currentShotType.textContent = state.selectedShotType || '— nicht gewählt —';
+      el.currentPosition.textContent = state.selectedPosition || '— nicht gewählt —';
+    }
+
+    function getTeamStats(teamKey){
+      const shots = state.actions.filter(a => a.attackingTeam === teamKey).length;
+      const goals = state.actions.filter(a => a.attackingTeam === teamKey && a.result === 'TOR').length;
+      const quote = shots ? Math.round((goals / shots) * 100) : 0;
+      return { shots, goals, quote };
+    }
+
+    function renderStats(){
+      const a = getTeamStats('A');
+      const b = getTeamStats('B');
+      el.statGoalsA.textContent = a.goals;
+      el.statGoalsB.textContent = b.goals;
+      el.statShotsA.textContent = a.shots;
+      el.statShotsB.textContent = b.shots;
+      el.statQuoteA.textContent = a.quote + '%';
+      el.statQuoteB.textContent = b.quote + '%';
+      const allPlayers = [...state.teams.A.players.map(p => ({...p, team:'A'})), ...state.teams.B.players.map(p => ({...p, team:'B'}))];
+      el.statsTableBody.innerHTML = '';
+      if(allPlayers.length === 0){
+        el.statsTableBody.innerHTML = '<tr><td colspan="4" class="empty">Noch keine Daten.</td></tr>';
+        return;
+      }
+      
+      // FELDSPIELER STATISTIK (Schüsse)
+      const fieldPlayerRows = allPlayers
+        .filter(p => p.role !== 'goalkeeper')
+        .map(player => {
+          const shots = state.actions.filter(a => a.shooterId === player.id).length;
+          const goals = state.actions.filter(a => a.shooterId === player.id && a.result === 'TOR').length;
+          const quote = shots ? Math.round((goals / shots) * 100) : 0;
+          return { player, shots, goals, quote };
+        })
+        .filter(r => r.shots > 0)  // Nur Spieler mit Würfen anzeigen
+        .sort((x,y) => y.goals - x.goals || y.shots - x.shots || x.player.name.localeCompare(y.player.name));
+      
+      // TORWART STATISTIK (Paraden)
+      const goalkeeperRows = allPlayers
+        .filter(p => p.role === 'goalkeeper')
+        .map(player => {
+          const shotsFaced = state.actions.filter(a => a.goalkeeperId === player.id).length;
+          const saves = state.actions.filter(a => a.goalkeeperId === player.id && a.result === 'GEHALTEN').length;
+          const goalsAgainst = state.actions.filter(a => a.goalkeeperId === player.id && a.result === 'TOR').length;
+          const saveQuote = shotsFaced ? Math.round((saves / shotsFaced) * 100) : 0;
+          return { player, shotsFaced, saves, goalsAgainst, saveQuote };
+        })
+        .filter(r => r.shotsFaced > 0)  // Nur TWs mit Würfen anzeigen
+        .sort((x,y) => y.saveQuote - x.saveQuote || y.saves - x.saves);
+      
+      // Tabelle leeren und neu aufbauen
+      el.statsTableBody.innerHTML = '';
+      
+      // Header für Feldspieler
+      if(fieldPlayerRows.length > 0){
+        const headerRow = document.createElement('tr');
+        headerRow.innerHTML = `<td colspan="4" style="background:var(--surface-3);padding:4px 6px;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">⚽ Feldspieler · T=Tore, W=Würfe, %=Quote</td>`;
+        el.statsTableBody.appendChild(headerRow);
+        
+        fieldPlayerRows.forEach(({player, shots, goals, quote}) => {
+          const tr = document.createElement('tr');
+          const teamLetter = player.team;
+          tr.innerHTML = `
+            <td><strong>${teamLetter}</strong> ${escapeHtml(formatPlayerLabel(player))}</td>
+            <td>${goals}</td>
+            <td>${shots}</td>
+            <td>${quote}%</td>
+          `;
+          el.statsTableBody.appendChild(tr);
+        });
+      }
+      
+      // Header für Torwarte
+      if(goalkeeperRows.length > 0){
+        const headerRow = document.createElement('tr');
+        headerRow.innerHTML = `<td colspan="4" style="background:var(--surface-3);padding:4px 6px;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">🧤 Torwarte · P=Paraden, W=Würfe gegen, %=Paradenquote</td>`;
+        el.statsTableBody.appendChild(headerRow);
+        
+        goalkeeperRows.forEach(({player, shotsFaced, saves, goalsAgainst, saveQuote}) => {
+          const tr = document.createElement('tr');
+          const teamLetter = player.team;
+          tr.innerHTML = `
+            <td><strong>${teamLetter}</strong> ${escapeHtml(formatPlayerLabel(player))} 🧤</td>
+            <td>${saves}</td>
+            <td>${shotsFaced}</td>
+            <td><strong style="color:${saveQuote >= 30 ? '#bbf7d0' : saveQuote >= 20 ? '#fde68a' : '#fecaca'}">${saveQuote}%</strong></td>
+          `;
+          el.statsTableBody.appendChild(tr);
+        });
+      }
+      
+      if(fieldPlayerRows.length === 0 && goalkeeperRows.length === 0){
+        el.statsTableBody.innerHTML = '<tr><td colspan="4" class="empty">Noch keine Daten.</td></tr>';
+      }
+    }
+
+    function renderLog(){
+      el.logList.innerHTML = '';
+      if(state.actions.length === 0){
+        el.logList.innerHTML = '<div class="empty">Noch keine Aktionen.</div>';
+        return;
+      }
+      state.actions.forEach(action => {
+        const item = document.createElement('div');
+        const pillClass = action.result === 'TOR' ? 'tor' : action.result === 'GEHALTEN' ? 'gehalten' : 'vorbei';
+        item.className = 'log-item';
+        item.innerHTML = `
+          <div class="log-top">
+            <div class="pill ${pillClass}">${escapeHtml(action.result)}</div>
+            <button type="button" class="mini-btn delete" style="padding:4px 8px;font-size:.7rem">✕ Löschen</button>
+          </div>
+          <div><strong>${escapeHtml(action.shooterName)}</strong> · ${escapeHtml(getCurrentTeam(action.attackingTeam).name)}</div>
+          <div class="muted">${escapeHtml(action.shotType)} · ${escapeHtml(action.position)} · ${escapeHtml(action.zone)}</div>
+          <div class="muted">Torwart: ${escapeHtml(action.goalkeeperName)}</div>
+        `;
+        item.querySelector('.mini-btn.delete').addEventListener('click', () => deleteAction(action.id));
+        el.logList.appendChild(item);
+      });
+    }
+
+    function deleteAction(actionId){
+      const actionIndex = state.actions.findIndex(a => a.id === actionId);
+      if(actionIndex === -1) return;
+      const action = state.actions[actionIndex];
+      // Revert score if it was a goal
+      if(action.result === 'TOR') state.teams[action.attackingTeam].score = Math.max(0, state.teams[action.attackingTeam].score - 1);
+      state.actions.splice(actionIndex, 1);
+      saveState();
+      renderAll();
+      showNotice('Aktion gelöscht.', 'ok');
+    }
+
+    function renderActiveButtons(){
+      document.querySelectorAll('[data-shot-type]').forEach(btn => btn.classList.toggle('active', btn.dataset.shotType === state.selectedShotType));
+      
+      if(state.selectingGKZone){
+        // In zone selection mode: highlight all goal buttons
+        document.querySelectorAll('.goal-btn').forEach(btn => btn.classList.add('active'));
+        document.querySelectorAll('[data-position]').forEach(btn => btn.classList.remove('active'));
+      } else {
+        // Normal mode: highlight position buttons
+        document.querySelectorAll('[data-position]').forEach(btn => btn.classList.toggle('active', btn.dataset.position === state.selectedPosition));
+        document.querySelectorAll('.goal-btn').forEach(btn => btn.classList.remove('active'));
+      }
+      
+      // Highlight Gehalten button when zone selection is active
+      const ghaltenBtn = document.querySelector('[data-result="GEHALTEN"]');
+      if(ghaltenBtn){
+        ghaltenBtn.classList.toggle('active', state.selectingGKZone);
+      }
+    }
+
+    function renderAll(){
+      renderDraftPlayers();
+      renderDatabaseList();
+      renderLoadSelects();
+      renderScoreAndTitles();
+      renderAttackTabs();
+      renderCurrentPlayers('A', el.playerListAField, true);
+      renderCurrentPlayers('A', el.playerListABench, false);
+      renderCurrentPlayers('B', el.playerListBField, true);
+      renderCurrentPlayers('B', el.playerListBBench, false);
+      renderStatus();
+      renderStats();
+      renderLog();
+      renderActiveButtons();
+      if(state.playerStatsDB) renderPlayerStatsDB();
+    }
+
+    el.dbAddPlayerBtn.addEventListener('click', addDraftPlayer);
+    el.dbPlayerName.addEventListener('keydown', e => { if(e.key === 'Enter') addDraftPlayer(); });
+    el.dbPlayerNumber.addEventListener('keydown', e => { if(e.key === 'Enter') addDraftPlayer(); });
+    el.saveTeamBtn.addEventListener('click', saveNewTeam);
+    document.getElementById('copyTemplateBtn').addEventListener('click', copyTemplateTeam);
+    el.loadTeamABtn.addEventListener('click', () => { loadTeamIntoMatch('A', el.loadTeamASelect.value); });
+    el.loadTeamBBtn.addEventListener('click', () => { loadTeamIntoMatch('B', el.loadTeamBSelect.value); });
+    document.querySelectorAll('[data-attack-team]').forEach(btn => btn.addEventListener('click', () => setAttackingTeam(btn.dataset.attackTeam)));
+    document.querySelectorAll('[data-shot-type]').forEach(btn => btn.addEventListener('click', () => { state.selectedShotType = btn.dataset.shotType; renderActiveButtons(); renderStatus(); }));
+    document.querySelectorAll('[data-position]').forEach(btn => btn.addEventListener('click', () => {
+      // Normal mode: select position
+      state.selectedPosition = btn.dataset.position;
+      renderActiveButtons();
+      renderStatus();
+    }));
+    document.querySelectorAll('[data-result]').forEach(btn => btn.addEventListener('click', () => registerAction(btn.dataset.result, btn.dataset.zone)));
+    el.clearLogBtn.addEventListener('click', clearAllActions);
+    el.newGameBtn.addEventListener('click', newGame);
+    document.getElementById('endGameBtn').addEventListener('click', endGame);
+    document.getElementById('exportPlayerStatsBtn').addEventListener('click', exportPlayerStatsCSV);
+    document.getElementById('clearPlayerStatsBtn').addEventListener('click', clearPlayerStatsDB);
+    
+    // OCR Event Listeners
+    document.getElementById('ocrUploadBtn').addEventListener('click', () => {
+      document.getElementById('ocrFileInput').click();
+    });
+    document.getElementById('ocrFileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if(file) runOCR(file);
+    });
+    document.getElementById('ocrSaveBtn').addEventListener('click', saveOCRTeam);
+
+    function saveState(){
+      try {
+        localStorage.setItem('hbScoutState', JSON.stringify(state));
+      } catch(e) {
+        console.error('Fehler beim Speichern:', e);
+      }
+    }
+
+    function openEditPlayerModal(teamKey, playerId){
+      const team = getCurrentTeam(teamKey);
+      const player = team.players.find(p => p.id === playerId);
+      if(!player) return;
+      
+      document.getElementById('editModalName').value = player.name || '';
+      document.getElementById('editModalNumber').value = player.number || '';
+      document.getElementById('editModalRole').value = player.role || 'field';
+      
+      window.currentEditTeamKey = teamKey;
+      window.currentEditPlayerId = playerId;
+      
+      const modal = document.getElementById('editModal');
+      modal.style.display = 'flex';
+      modal.style.alignItems = 'center';
+      modal.style.justifyContent = 'center';
+    }
+
+    function closeEditModal(){
+      document.getElementById('editModal').style.display = 'none';
+      delete window.currentEditTeamKey;
+      delete window.currentEditPlayerId;
+    }
+
+    function saveEditPlayer(){
+      const teamKey = window.currentEditTeamKey;
+      const playerId = window.currentEditPlayerId;
+      if(!teamKey || !playerId) return;
+      
+      const team = getCurrentTeam(teamKey);
+      if(!team) return;
+      
+      const playerIndex = team.players.findIndex(p => p.id === playerId);
+      if(playerIndex === -1) return;
+      
+      const player = team.players[playerIndex];
+      player.name = document.getElementById('editModalName').value || player.name;
+      player.number = document.getElementById('editModalNumber').value || '';
+      player.role = document.getElementById('editModalRole').value || 'field';
+      
+      saveState();
+      renderAll();
+      closeEditModal();
+      showNotice('Spieler aktualisiert.', 'ok');
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if(e.target.id === 'editModal') closeEditModal();
+    });
+
+    
+    function switchView(view){
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view'+view.charAt(0).toUpperCase()+view.slice(1)).classList.add('active');
+      document.getElementById('modeSetupBtn').classList.toggle('active', view === 'setup');
+      document.getElementById('modeLiveBtn').classList.toggle('active', view === 'live');
+    }
+    document.getElementById('modeSetupBtn').addEventListener('click', () => switchView('setup'));
+    document.getElementById('modeLiveBtn').addEventListener('click', () => switchView('live'));
+
+    loadDatabase();
+    loadPlayerStatsDB();
+    renderAll();
+    renderPlayerStatsDB();
+    // Auto-switch to setup if no teams loaded
+    if(state.teams.A.players.length === 0 && state.teams.B.players.length === 0){
+      switchView('setup');
+    }
+  </script>
+</body>
+</html>
